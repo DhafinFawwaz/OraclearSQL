@@ -22,7 +22,7 @@ class FailureRecovery:
         self.max_checkpoint_time = 5 # minutes
         self.last_checkpoint_time = datetime.now()
 
-        self.storage_file = "log.json"
+        self.storage_file = "recovery.log"
         self.on_log_recovered: Callable[[ExecutionResult], None] = lambda log: print(log)
 
 
@@ -49,25 +49,31 @@ class FailureRecovery:
                 self.on_log_recovered(log) # handled by query processor
 
 
-    # TODO: Use custom file format instead of JSON so we can easily append to the file. Also handle datetime serialization. but thats a job for query processor
+    def __to_writable(self, log: ExecutionResult) -> str:
+        res = str(log.transaction_id) + "\n"
+        res += str(log.timestamp) + "\n"
+        res += log.message + "\n"
+        res += log.query + "\n"
+        res += str(log.data) + "\n"
+        return res
+    
+    def __from_writable(self, log: str) -> ExecutionResult:
+        lines = log.split("\n")
+        return ExecutionResult(
+            transaction_id=int(lines[0]),
+            timestamp=datetime.strptime(lines[1], "%Y-%m-%d %H:%M:%S.%f"),
+            message=lines[2],
+            data=Rows(data=[int(x) for x in lines[4].split(",")]),
+            query=lines[3]
+        )
+
     def __save_checkpoint(self) -> None:
         """Save a checkpoint in log. All entries in the write-ahead log from the last checkpoint are used to update data in physical storage in order to synchronize data. This method can be called after certain time periods (e.g. 5 minutes), and/or when the write-ahead log is almost full."""
         
-        # remove ] from the beginning of the file and add , at the beginning of the current log
-        # with open(self.storage_file, 'w') as file:
-        #     to_write = str([log.__dict__ for log in self.write_ahead_log])
-        #     to_write = to_write[1:]
-        #     json.dump(to_write, file)
-
         with open(self.storage_file, 'a') as file:
-            to_write = []
+            to_write = ""
             for log in self.write_ahead_log:
-                el = log.__dict__
-                el["timestamp"] = str(el["timestamp"])
-                # el["data"] = f"{el['data']}"
-                el["data"] = f""
-                to_write.append(el)
-            to_write = str(to_write).replace("'", "\"")
+                to_write += self.__to_writable(log)
             file.write(to_write)
             
         self.write_ahead_log.clear()
