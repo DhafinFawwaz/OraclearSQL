@@ -22,8 +22,22 @@ class FailureRecovery:
         self.max_checkpoint_time = 5 # minutes
         self.last_checkpoint_time = datetime.now()
 
-        self.storage_file = "recovery.log"
         self.on_log_recovered: Callable[[ExecutionResult], None] = lambda log: print(log)
+        self.storage_file = "recovery.log"
+
+        self.__try_populate_log()
+    
+    def __try_populate_log(self) -> None:
+        if Path(self.storage_file).exists():
+            with open(self.storage_file, 'r') as file:
+                logs = file.read().strip().split("\n")
+                if len(logs) < 5: 
+                    self.write_ahead_log = []
+                    return
+
+                for i in range(0, len(logs), 5):
+                    print(logs[i:i+5])
+                    self.write_ahead_log.append(ExecutionResult(*logs[i:i+5]))
 
 
     def write_log(self, info: ExecutionResult) -> None:
